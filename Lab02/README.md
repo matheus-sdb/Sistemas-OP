@@ -2,9 +2,9 @@
 
 ## Você é capaz de identificar os trechos executados por pai e filho?
 
-Processo filho executa printf("I am the child %d\n",pid); e execlp("/bin/ls","ls",NULL);.
+Processo filho executa: printf("I am the child %d\n",pid); e execlp("/bin/ls","ls",NULL);.
 
-Processo pai executa printf("I am the parent %d\n",pid);, wait(NULL);, e printf("Child Complete\n");
+Processo pai executa: printf("I am the parent %d\n",pid);, wait(NULL);, e printf("Child Complete\n");
 
 ## Quantos processos serão criados?
 
