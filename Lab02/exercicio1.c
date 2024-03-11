@@ -1,61 +1,43 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 
+#define BUFFER_SIZE 256
+
 int main() {
-    int fd[2]; // File descriptors para o pipe
+    int fd[2]; // Pipe para comunicação de pai para filho
     pid_t pid;
-    char buf[1024]; // Buffer para armazenar as mensagens
+    char parent_msg[BUFFER_SIZE] = "Pode ir na padaria, por favor?";
+    char read_buffer[BUFFER_SIZE];
 
     // Cria o pipe
     if (pipe(fd) == -1) {
-        perror("pipe");
-        exit(1);
+        perror("Pipe Failed");
+        exit(EXIT_FAILURE);
     }
 
-    // Cria o processo filho
     pid = fork();
     if (pid < 0) {
-        perror("fork");
-        exit(1);
-    }
-
-    if (pid == 0) {
-        // Processo filho
-        close(fd[1]); // Fecha a extremidade de escrita do pipe
-        
-        // Recebe mensagem do pai
-        read(fd[0], buf, sizeof(buf));
-        printf("Filho: %s\n", buf);
-
-        // Envia resposta ao pai
-        close(fd[0]); // Primeiro fecha a extremidade de leitura do pipe
-        open("child_to_parent_pipe", O_WRONLY);
-        write(fd[1], "Já estou indo, pai", 18);
-        
-        exit(0);
-    } else {
-        // Processo pai
-        close(fd[0]); // Fecha a extremidade de leitura do pipe
-
+        fprintf(stderr, "Fork Failed\n");
+        exit(EXIT_FAILURE);
+    } else if (pid > 0) { // Processo pai
+        close(fd[0]); // Fecha lado de leitura do pipe no pai
         // Envia mensagem ao filho
-        write(fd[1], "Vá a padaria, filho", 20);
-        close(fd[1]); // Fecha a extremidade de escrita do pipe após enviar
-        
-        // Espera o filho terminar
-        wait(NULL);
-
-        // Abre o pipe de filho para pai para leitura
-        fd[0] = open("child_to_parent_pipe", O_RDONLY);
-        
-        // Recebe resposta do filho
-        read(fd[0], buf, sizeof(buf));
-        printf("Pai: %s\n", buf);
-
-        // Envia a última mensagem ao filho
-        printf("Pai: Obrigado, filho\n");
+        write(fd[1], parent_msg, sizeof(parent_msg));
+        printf("Pai: Mensagem enviada ao filho.\n");
+        close(fd[1]); // Fecha lado de escrita do pipe
+        wait(NULL); // Espera o processo filho terminar
+        printf("Pai: Finalizando processo.\n");
+    } else { // Processo filho
+        close(fd[1]); // Fecha lado de escrita do pipe no filho
+        // Lê mensagem do pai
+        read(fd[0], read_buffer, sizeof(read_buffer));
+        printf("Filho: Mensagem recebida do pai: %s\n", read_buffer);
+        close(fd[0]); // Fecha lado de leitura do pipe
+        printf("Filho: Ok, pai. Indo para a padaria.\n");
+        exit(0);
     }
 
     return 0;
