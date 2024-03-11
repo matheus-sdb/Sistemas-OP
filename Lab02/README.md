@@ -15,3 +15,7 @@ Segundo fork: Processo pai e processo filho criam um novo processo.  Total de pr
 Terceiro fork: Todos os 4 processos criam um novo processo. Total de processos agora: 8.
 
 Total de processos criados: 8.
+
+## Construa um exemplo, na linguagem C, onde os processos pai e filho trocam algum tipo de mensagem.
+
+![Screenshot_1](https://github.com/matheus-sdb/Sistemas-OP/assets/160658617/e852c1de-3e3f-4164-9d98-7c29f29658af)
