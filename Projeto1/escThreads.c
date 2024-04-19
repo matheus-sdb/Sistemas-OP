@@ -1,98 +1,85 @@
-#include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
+#include <pthread.h>
+#include <semaphore.h>
+
+#define MAX_PESSOAS 10000
 
 typedef struct {
-  int time;
-  int direction;
-} Person;
+    int tempo, direcao;
+} Passageiro;
 
-int globalTime = 0;
-int direction = 0;
-int amountPeople = 0;
-int endTime = 0;
+typedef struct {
+    int tempoFinal;
+    int direcaoAtual; // -1 indica que a escada está parada
+    int contador[2]; // Contadores para pessoas esperando em cada direção [0] e [1]
+    Passageiro fila[2][MAX_PESSOAS]; // Filas de espera para cada direção
+    int fimFila[2]; // Aponta para o fim da fila em cada direção
+} EstadoEscada;
 
-void *person(void *arg) {
-  Person *people = (Person *)arg;
+pthread_mutex_t mutex;
+sem_t semTempo, semDirecao;
 
-  direction = people[0].direction;
-  endTime = people[0].time + 10;
+void *processarPassageiro(void *arg) {
+    Passageiro *p = (Passageiro *)arg;
 
-  int counter = 0;
-  int endCounter = 0;
-  Person waiting;
-
-  while (1) {
-    if (globalTime == endTime) {
-      if (direction == 1) {
-        direction = 0;
-      } else {
-        direction = 1;
-      }
-
-      if (waiting.direction == direction) {
-        endTime = endTime + 10;
-        endCounter++;
-      }
+    pthread_mutex_lock(&mutex);
+    if (estado.direcaoAtual == -1 || estado.direcaoAtual == p->direcao) {
+        // Processa imediatamente se estiver na mesma direção ou escada parada
+        estado.direcaoAtual = p->direcao;
+        estado.tempoFinal = p->tempo + 10; // Supõe processamento imediato
+        estado.contador[p->direcao]++;
+    } else {
+        // Adiciona à fila de espera da direção oposta
+        estado.fila[p->direcao][estado.fimFila[p->direcao]++] = *p;
     }
+    pthread_mutex_unlock(&mutex);
 
-    if (globalTime == people[counter].time) {
-      if (direction == people[counter].direction) {
-        if (people[counter].time <= endTime) {
-          endTime = people[counter].time + 10;
-          endCounter++;
+    // Trabalha na fila pendente se necessário
+    sem_wait(&semDirecao);
+    if (estado.contador[estado.direcaoAtual] == 0) { // Ninguém na direção atual
+        estado.direcaoAtual = 1 - estado.direcaoAtual; // Troca a direção
+        for (int i = 0; i < estado.fimFila[estado.direcaoAtual]; i++) {
+            sem_post(&semTempo);
+            estado.tempoFinal += 10;
+            estado.contador[estado.direcaoAtual]++;
         }
-        counter++;
-      } else {
-        waiting = people[counter];
-        counter++;
-      }
+        estado.fimFila[estado.direcaoAtual] = 0; // Esvazia a fila
     }
+    sem_post(&semDirecao);
 
-    globalTime++;
-    if (endCounter == amountPeople) {
-      break;
-    }
-  }
+    return NULL;
 }
 
 int main() {
-  FILE *file = fopen("entrada.txt", "r");
-  if (file == NULL) {
-    printf("Erro ao abrir arquivo de entrada.\n");
-    return 1;
-  }
+    EstadoEscada estado = {0, -1, {0, 0}, {{{0, 0}}, {{0, 0}}}, {0, 0}};
+    pthread_t threads[MAX_PESSOAS];
+    Passageiro passageiros[MAX_PESSOAS];
+    int numPassageiros;
 
-  if (fscanf(file, "%d", &amountPeople) != 1) {
-    printf("Erro ao ler número de pessoas");
-    fclose(file);
-    return 1;
-  }
+    // Inicialização de semáforos e mutex
+    sem_init(&semTempo, 0, 1);
+    sem_init(&semDirecao, 0, 1);
+    pthread_mutex_init(&mutex, NULL);
 
-  Person people[amountPeople];
-
-  for (int i = 0; i < amountPeople; i++) {
-    if (fscanf(file, "%d %d", &people[i].time, &people[i].direction) != 2) {
-      printf("Erro ao ler informações da pessoa %d.\n", i + 1);
-      fclose(file);
-      return 1;
+    // Carregar passageiros
+    for (int i = 0; i < numPassageiros; i++) {
+        scanf("%d %d", &passageiros[i].tempo, &passageiros[i].direcao);
+        pthread_create(&threads[i], NULL, processarPassageiro, &passageiros[i]);
     }
-  }
 
-  pthread_t threads;
-  if (pthread_create(&threads, NULL, person, &people) != 0) {
-    printf("Erro ao criar thread para a pessoa %d.\n");
-    fclose(file);
-    return 1;
-  }
+    // Espera todas as threads terminarem
+    for (int i = 0; i < numPassageiros; i++) {
+        pthread_join(threads[i], NULL);
+    }
 
-  if (pthread_join(threads, NULL) != 0) {
-    printf("Erro ao aguardar thread da pessoa.\n");
-    fclose(file);
-    return 1;
-  }
+    printf("O momento final de parada da escada rolante é %d\n", estado.tempoFinal);
 
-  printf("%d\n", endTime);
+    // Limpeza de recursos
+    sem_destroy(&semTempo);
+    sem_destroy(&semDirecao);
+    pthread_mutex_destroy(&mutex);
 
-  return 0;
+    return 0;
 }
