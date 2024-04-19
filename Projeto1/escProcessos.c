@@ -1,117 +1,89 @@
 #include <stdio.h>
-#include <sys/wait.h>
+#include <stdlib.h>
 #include <unistd.h>
+#include <sys/mman.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <semaphore.h>
+#include <string.h>
+
+#define MAX_PESSOAS 10000
 
 typedef struct {
-  int time;
-  int direction;
-} Person;
+    int tempo, direcao;
+} Passageiro;
 
-int globalTime = 0;
-int direction = 0;
-int amountPeople = 0;
-int endTime = 0;
-int fd[2];
+typedef struct {
+    int tempoFinal;
+    int direcaoAtual; // -1 indica que a escada está parada
+    int contador[2]; // Contadores para pessoas esperando em cada direção
+    Passageiro fila[2][MAX_PESSOAS]; // Filas de espera para cada direção
+    int fimFila[2]; // Indices para o fim da fila em cada direção
+} EstadoEscada;
 
-void person(Person *people) {
-  direction = people[0].direction;
-  endTime = people[0].time + 10;
-
-  int counter = 0;
-  int endCounter = 0;
-  Person waiting;
-
-  while (1) {
-    if (globalTime == endTime) {
-      if (direction == 1) {
-        direction = 0;
-      } else {
-        direction = 1;
-      }
-
-      if (waiting.direction == direction) {
-        endTime = endTime + 10;
-        endCounter++;
-        write(fd[1], &endTime, sizeof(endTime));
-      }
+// Função que cada processo filho executará
+void processarPassageiro(Passageiro p, EstadoEscada *estado, sem_t *semDir, sem_t *semTempo) {
+    // Acesso crítico para verificar direção e tempo
+    sem_wait(semDir);
+    if (estado->direcaoAtual == -1 || estado->direcaoAtual == p.direcao) {
+        estado->direcaoAtual = p.direcao;
+        estado->tempoFinal = p.tempo + 10; // Incrementa o tempo final
+        estado->contador[p.direcao]++;
+    } else {
+        // Adiciona à fila de espera da direção oposta
+        estado->fila[1-p.direcao][estado->fimFila[1-p.direcao]++] = p;
     }
+    sem_post(semDir);
 
-    if (globalTime == people[counter].time) {
-      if (direction == people[counter].direction) {
-        if (people[counter].time <= endTime) {
-          endTime = people[counter].time + 10;
-          endCounter++;
-          write(fd[1], &endTime, sizeof(endTime));
+    // Processa a fila pendente se necessário
+    sem_wait(semTempo);
+    if (estado->contador[estado->direcaoAtual] == 0) { // Ninguém na direção atual
+        estado->direcaoAtual = 1 - estado->direcaoAtual; // Troca a direção
+        for (int i = 0; i < estado->fimFila[estado->direcaoAtual]; i++) {
+            estado->tempoFinal += 10;
+            estado->contador[estado->direcaoAtual]++;
         }
-        counter++;
-      } else {
-        waiting = people[counter];
-        counter++;
-      }
+        estado->fimFila[estado->direcaoAtual] = 0; // Esvazia a fila
     }
-
-    globalTime++;
-    if (endCounter == amountPeople) {
-      break;
-    }
-  }
+    sem_post(semTempo);
 }
 
 int main() {
-  FILE *file = fopen("entrada.txt", "r");
-  if (file == NULL) {
-    printf("Erro ao abrir arquivo de entrada.\n");
-    return 1;
-  }
+    int shm_fd = shm_open("/estadoEscada", O_CREAT | O_RDWR, 0666);
+    ftruncate(shm_fd, sizeof(EstadoEscada));
+    EstadoEscada *estado = mmap(NULL, sizeof(EstadoEscada), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
 
-  if (fscanf(file, "%d", &amountPeople) != 1) {
-    printf("Erro ao ler número de pessoas");
-    fclose(file);
-    return 1;
-  }
+    estado->tempoFinal = 0;
+    estado->direcaoAtual = -1;
+    memset(estado->contador, 0, sizeof(estado->contador));
+    memset(estado->fimFila, 0, sizeof(estado->fimFila));
 
-  Person people[amountPeople];
+    sem_t *semDir = sem_open("/semDir", O_CREAT, 0666, 1);
+    sem_t *semTempo = sem_open("/semTempo", O_CREAT, 0666, 1);
 
-  for (int i = 0; i < amountPeople; i++) {
-    if (fscanf(file, "%d %d", &people[i].time, &people[i].direction) != 2) {
-      printf("Erro ao ler informações da pessoa %d.\n", i + 1);
-      fclose(file);
-      return 1;
+    Passageiro passageiros[MAX_PESSOAS];
+    int numPassageiros;
+    scanf("%d", &numPassageiros);
+
+    for (int i = 0; i < numPassageiros; i++) {
+        scanf("%d %d", &passageiros[i].tempo, &passageiros[i].direcao);
+        if (fork() == 0) {
+            processarPassageiro(passageiros[i], estado, semDir, semTempo);
+            exit(0);
+        }
     }
-  }
 
-  if (pipe(fd) == -1) {
-    printf("Pipe failed.\n");
-    return 1;
-  }
+    while (wait(NULL) > 0); // Espera todos os processos filhos terminarem
 
-  pid_t pid = fork();
-  if (pid < 0) {
-    printf("Erro ao criar processo para a pessoa.\n");
-    fclose(file);
-    return 1;
-  } else if (pid == 0) {
-    close(fd[0]);
-    person(people);
-    close(fd[1]);
+    printf("O momento final de parada da escada rolante é %d\n", estado->tempoFinal);
+
+    munmap(estado, sizeof(EstadoEscada));
+    close(shm_fd);
+    shm_unlink("/estadoEscada");
+    sem_close(semDir);
+    sem_unlink("/semDir");
+    sem_close(semTempo);
+    sem_unlink("/semTempo");
+
     return 0;
-  }
-
-  int status;
-  if (waitpid(pid, &status, 0) < 0) {
-    printf("Erro ao aguardar processo da pessoa.\n");
-    fclose(file);
-    return 1;
-  }
-
-  close(fd[1]);
-  int temp;
-  while (read(fd[0], &temp, sizeof(temp)) > 0) {
-    endTime = temp;
-  }
-
-  printf("%d\n", endTime);
-  close(fd[0]);
-
-  return 0;
 }
