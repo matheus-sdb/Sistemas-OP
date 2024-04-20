@@ -22,3 +22,12 @@ Ao comparar as abordagens usando threads e processos para gerenciar o acesso à 
 Em contrapartida, a utilização de processos envolve a comunicação através de pipes, o que pode introduzir atrasos e complicações adicionais. Além disso, cada processo tem seu próprio espaço de memória, o que aumenta o consumo de recursos e pode tornar a coordenação entre eles mais lenta e complexa.
 
 Dessa forma, para o controle de acesso à escada rolante, a implementação com threads mostrou-se mais eficiente. Ela permite um gerenciamento mais ágil e eficaz da concorrência, adaptando-se melhor às necessidades do problema ao minimizar a complexidade e o tempo de resposta.
+
+
+## Execuções
+
+### Processos
+![image](https://github.com/matheus-sdb/Sistemas-OP/assets/160658617/92c9ef4f-b366-4c34-949d-83ff26f19828)
+
+### Threads
+![image](https://github.com/matheus-sdb/Sistemas-OP/assets/160658617/f30ddaa0-322d-4c78-a276-7ec78188793e)
