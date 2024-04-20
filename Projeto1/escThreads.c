@@ -1,85 +1,109 @@
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <semaphore.h>
-
-#define MAX_PESSOAS 10000
 
 typedef struct {
-    int tempo, direcao;
-} Passageiro;
+  int timeOfArrival;
+  int directionOfTravel;
+} Traveler;
 
-typedef struct {
-    int tempoFinal;
-    int direcaoAtual; // -1 indica que a escada está parada
-    int contador[2]; // Contadores para pessoas esperando em cada direção [0] e [1]
-    Passageiro fila[2][MAX_PESSOAS]; // Filas de espera para cada direção
-    int fimFila[2]; // Aponta para o fim da fila em cada direção
-} EstadoEscada;
+int globalClock = 0;
+int trafficDirection = 0;
+int countOfTravelers = 0;
+int operationDuration = 0;
 
-pthread_mutex_t mutex;
-sem_t semTempo, semDirecao;
+void *manageTraffic(void *data) {
+  Traveler *travelersQueue = (Traveler *)data;
 
-void *processarPassageiro(void *arg) {
-    Passageiro *p = (Passageiro *)arg;
+  trafficDirection = travelersQueue[0].directionOfTravel;
+  operationDuration = travelersQueue[0].timeOfArrival + 10;
 
-    pthread_mutex_lock(&mutex);
-    if (estado.direcaoAtual == -1 || estado.direcaoAtual == p->direcao) {
-        // Processa imediatamente se estiver na mesma direção ou escada parada
-        estado.direcaoAtual = p->direcao;
-        estado.tempoFinal = p->tempo + 10; // Supõe processamento imediato
-        estado.contador[p->direcao]++;
-    } else {
-        // Adiciona à fila de espera da direção oposta
-        estado.fila[p->direcao][estado.fimFila[p->direcao]++] = *p;
+  int travelerIndex = 0;
+  int handledTravelers = 0;
+  Traveler nextTraveler;
+
+  while (1) {
+    if (globalClock == operationDuration) {
+      trafficDirection = 1 - trafficDirection;
+      if (nextTraveler.directionOfTravel == trafficDirection) {
+        operationDuration += 10;
+        handledTravelers++;
+      }
     }
-    pthread_mutex_unlock(&mutex);
 
-    // Trabalha na fila pendente se necessário
-    sem_wait(&semDirecao);
-    if (estado.contador[estado.direcaoAtual] == 0) { // Ninguém na direção atual
-        estado.direcaoAtual = 1 - estado.direcaoAtual; // Troca a direção
-        for (int i = 0; i < estado.fimFila[estado.direcaoAtual]; i++) {
-            sem_post(&semTempo);
-            estado.tempoFinal += 10;
-            estado.contador[estado.direcaoAtual]++;
+    if (globalClock == travelersQueue[travelerIndex].timeOfArrival) {
+      if (trafficDirection == travelersQueue[travelerIndex].directionOfTravel) {
+        if (travelersQueue[travelerIndex].timeOfArrival <= operationDuration) {
+          operationDuration = travelersQueue[travelerIndex].timeOfArrival + 10;
+          handledTravelers++;
         }
-        estado.fimFila[estado.direcaoAtual] = 0; // Esvazia a fila
+        travelerIndex++;
+      } else {
+        nextTraveler = travelersQueue[travelerIndex];
+        travelerIndex++;
+      }
     }
-    sem_post(&semDirecao);
 
-    return NULL;
+    globalClock++;
+    if (handledTravelers == countOfTravelers) {
+      break;
+    }
+  }
+
+  return NULL;
 }
 
 int main() {
-    EstadoEscada estado = {0, -1, {0, 0}, {{{0, 0}}, {{0, 0}}}, {0, 0}};
-    pthread_t threads[MAX_PESSOAS];
-    Passageiro passageiros[MAX_PESSOAS];
-    int numPassageiros;
+  FILE *inputStream = fopen("input.txt", "r");
+  if (!inputStream) {
+    fprintf(stderr, "Error opening the input file\n");
+    return EXIT_FAILURE;
+  }
 
-    // Inicialização de semáforos e mutex
-    sem_init(&semTempo, 0, 1);
-    sem_init(&semDirecao, 0, 1);
-    pthread_mutex_init(&mutex, NULL);
+  if (fscanf(inputStream, "%d", &countOfTravelers) != 1) {
+    fprintf(stderr, "Error reading the number of travelers\n");
+    fclose(inputStream);
+    return EXIT_FAILURE;
+  }
 
-    // Carregar passageiros
-    for (int i = 0; i < numPassageiros; i++) {
-        scanf("%d %d", &passageiros[i].tempo, &passageiros[i].direcao);
-        pthread_create(&threads[i], NULL, processarPassageiro, &passageiros[i]);
+  Traveler *travelers = malloc(countOfTravelers * sizeof(Traveler));
+  if (!travelers) {
+    fprintf(stderr, "Memory allocation failed for travelers\n");
+    fclose(inputStream);
+    return EXIT_FAILURE;
+  }
+
+  for (int i = 0; i < countOfTravelers; i++) {
+    if (fscanf(inputStream, "%d %d", &travelers[i].timeOfArrival, &travelers[i].directionOfTravel) != 2) {
+      fprintf(stderr, "Error reading traveler data at index %d.\n", i + 1);
+      fclose(inputStream);
+      free(travelers);
+      return EXIT_FAILURE;
     }
+  }
 
-    // Espera todas as threads terminarem
-    for (int i = 0; i < numPassageiros; i++) {
-        pthread_join(threads[i], NULL);
-    }
+  fclose(inputStream);
 
-    printf("O momento final de parada da escada rolante é %d\n", estado.tempoFinal);
+  pthread_t trafficThread;
+  if (pthread_create(&trafficThread, NULL, manageTraffic, travelers) != 0) {
+    fprintf(stderr, "Failed to create the thread\n");
+    free(travelers);
+    return EXIT_FAILURE;
+  }
 
-    // Limpeza de recursos
-    sem_destroy(&semTempo);
-    sem_destroy(&semDirecao);
-    pthread_mutex_destroy(&mutex);
+  pthread_join(trafficThread, NULL);
+  free(travelers);
 
-    return 0;
+  FILE *outputStream = fopen("output.txt", "w");
+  if (!outputStream) {
+    fprintf(stderr, "Error opening the output file\n");
+    return EXIT_FAILURE;
+  }
+
+  fprintf(outputStream, "%d\n", operationDuration);
+  fclose(outputStream);
+
+  printf("%d\n", operationDuration);
+  
+  return EXIT_SUCCESS;
 }
