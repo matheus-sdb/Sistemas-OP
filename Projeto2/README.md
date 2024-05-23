@@ -12,13 +12,13 @@
 
 
 ## Declaração de Contas e Mutex:
-**Conta conta_A; e Conta conta_B;**: Duas contas bancárias iniciais.
+`Conta conta_A; e Conta conta_B;`: Duas contas bancárias iniciais.
 
-**pthread_mutex_t mutex;**: Um mutex para garantir a sincronização das operações de transferência.
+`pthread_mutex_t mutex;`: Um mutex para garantir a sincronização das operações de transferência.
 
 
 ## Função de Transferência:
-**void *realizar_transferencia(void *argumento)**: Função executada por threads que realiza a transferência de dinheiro entre contas com uso de mutex para evitar condições de corrida.
+`void *realizar_transferencia(void *argumento)`: Função executada por threads que realiza a transferência de dinheiro entre contas com uso de mutex para evitar condições de corrida.
 
 
 ## Função Principal (main):
